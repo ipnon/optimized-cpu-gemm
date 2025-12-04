@@ -1,20 +1,22 @@
 #include <iostream>
 
+#include "benchmark.hpp"
 #include "gemm.hpp"
+#include "matrix.hpp"
 
 int main() {
-  // 2x3 matrix A, 3x2 matrix B -> 2x2 matrix C
-  // All 1s: each element of C should equal 3 (the shared dimension K)
+  for (size_t N : {256, 512, 1024}) {
+    Matrix A(N, N);
+    Matrix B(N, N);
+    Matrix C(N, N);
 
-  float A[] = {1, 1, 1, 1, 1, 1};
-  float B[] = {1, 1, 1, 1, 1, 1};
-  float C[4] = {0};  // 2x2 output
+    A.fill_random(42);
+    B.fill_random(43);
 
-  gemm_naive(A, B, C, 2, 2, 3);  // M=2, N=2, K=3
+    double gflops =
+        benchmark_gemm(gemm_naive, A.data(), B.data(), C.data(), N, N, N);
+    std::cout << N << "x" << N << ": " << gflops << " GFLOPS\n";
+  }
 
-  std::cout << "C = \n";
-  std::cout << C[0] << " " << C[1] << "\n";
-  std::cout << C[2] << " " << C[3] << "\n";
-
-  return 0;
+  return 0;  // Matrices automatically freed
 }
