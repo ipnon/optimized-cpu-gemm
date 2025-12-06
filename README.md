@@ -47,3 +47,5 @@
 - `#pragma once` prevents headers from being included multiple times.
 - We don't use nested `std::vector<float>` for matrices because they'd be scattered in memory. Instead we use raw pointers to device memory: `C[i * N + j] += A[i * K + k] * B[k * N + j]`.
 - CUDA uses row-major matrix access by convention. Sequential memory access allows fast cache hits because CPUs load memory in cache lines (128 bytes for M2).
+- Cache-line alignment only makes sense in multi-threaded situations to prevent false sharing.
+- For GEMM performance, what matters is cache blocking, SIMD, loop unrolling, and register tiling.
