@@ -1,51 +1,91 @@
-# Month 2: High-Performance CPU Programming
+# Optimized CPU GEMM
 
-## Objectives
+**Platform:** Apple M2 MacBook Air
+**Compiler:** Apple Clang with `-O3`
+**Date:** December 2025
 
-- Understand caches, NUMA, SIMD intrinsics, and blocking strategies.
-- Learn Linux performance profiling tools (perf, flamegraphs).
+## Summary
 
-## Readings
+Implemented three versions of General Matrix Multiply (GEMM):
 
-- Systems Performance (Gregg): CPU, Memory, Profiling chapters.
-- Intel Intrinsics Guide.
-- Brendan Gregg: "Flamegraphs."
+1. **Naive** — Triple nested loop, baseline implementation
+2. **Blocked** — Cache-blocked with 32×32 tiles, optimized loop order (i0→k0→j0)
+3. **SIMD** — Blocked + ARM NEON vectorization (4 floats per instruction)
 
-## Project: Optimized CPU GEMM (Matrix Multiply)
+## Results
 
-### Requirements
+| Matrix Size | Naive (GFLOPS) | Blocked (GFLOPS) | SIMD (GFLOPS) | Speedup |
+|-------------|----------------|------------------|---------------|---------|
+| 256×256     | 1.87           | 4.88             | 18.8          | 10.1×   |
+| 512×512     | 1.88           | 4.73             | 18.0          | 9.6×    |
+| 1024×1024   | 1.73           | 3.15             | 16.5          | 9.5×    |
 
-- Implement three versions:
-  1. Naive triple-for-loop (baseline)
-  2. Cache-blocked version (L1/L2 aware)
-  3. SIMD-accelerated version using AVX2 or AVX-512
-- Benchmark each on matrices 256×256, 512×512, 1024×1024.
-- Use perf to collect:
-  - Cache misses
-  - Branch misses
-  - Cycles-per-instruction (CPI)
-- Generate a flamegraph for each version.
-- Provide a performance report + graphs.
+![Performance Graph](performance.png)
 
-### Why This Matters
+## Analysis
 
-- GEMM is the foundation of AI compute.
-- Understanding CPU performance sets the stage for GPU optimization.
-- Demonstrates mastery of low-level optimization → great for interviews.
+### Naive Implementation
+- ~1.8 GFLOPS across all sizes
+- Cache-hostile access pattern: B matrix accessed with stride N
+- Each k iteration jumps N floats in memory, causing cache misses
 
-### Notes
+### Blocked Implementation
+- 2.6× speedup over naive (256×256)
+- Performance degrades at 1024×1024 (3.15 GFLOPS) due to increased L2 pressure
+- Loop reordering (k0 before j0) improved 1024×1024 by 14%
 
-- NUMA is Non-Uniform Memory Access.
-- SIMD is Single Instruction, Multiple Data.
-- Intrinsics are C functions that map directly to SIMD instructions.
-- Blocking is also called tiling. It divides large matrix operations into smaller chunks that fit into cache. L1 cache is ~100x faster than RAM. Every time the working set exceeds cache size, the cache misses and the CPU stalls.
-- GEMM stands for General Matrix Multiply. 90% of transformer FLOPs are matrix multiplies.
-- Cache-blocking means choosing tile sizes so that the tiles fit in either L1 or L2. On an Apple M2 CPU L1 is 128KB/core in ~4 cycles and L2 is 4MB/core in ~12 cycles.
-- AVX2, AVX-512, and ARM NEON are all SIMD instruction sets, but M2 only uses NEON. They function identically but their intrinsic functions have different names.
-- Branch prediction is relevant to GEMM because an ideal GEMM has zero branch misses.
-- CPI is cycles per instruction. CPI ~= 1 is generally par. CPI <= 0.25 is excellent. CPI > 2 is abysmmal.
-- `#pragma once` prevents headers from being included multiple times.
-- We don't use nested `std::vector<float>` for matrices because they'd be scattered in memory. Instead we use raw pointers to device memory: `C[i * N + j] += A[i * K + k] * B[k * N + j]`.
-- CUDA uses row-major matrix access by convention. Sequential memory access allows fast cache hits because CPUs load memory in cache lines (128 bytes for M2).
-- Cache-line alignment only makes sense in multi-threaded situations to prevent false sharing.
-- For GEMM performance, what matters is cache blocking, SIMD, loop unrolling, and register tiling.
+### SIMD Implementation
+- 10× speedup over naive
+- Processes 4 C elements per iteration using NEON `float32x4_t`
+- Uses `vfmaq_f32` (fused multiply-add) for compute
+- 74% of cycles spent in FMA instruction (compute-bound)
+
+## Profiling
+
+Profiled with `samply` (Firefox Profiler):
+
+| Hotspot | % of Time | Notes |
+|---------|-----------|-------|
+| `vfmaq_f32` | 74% | Actual computation (ideal) |
+| k loop overhead | 12% | Loop control/bounds checking |
+| `vld1q_f32` (B load) | 7.5% | Memory access |
+| i loop overhead | 4% | Loop control |
+| `vst1q_f32` (C store) | 2% | Memory access |
+
+## Theoretical Analysis
+
+- M2 theoretical FP32 peak: ~110 GFLOPS (4 P-cores × 8 FLOPs/cycle × 3.5 GHz)
+- Current achievement: 18 GFLOPS (~16% of peak)
+- Apple Accelerate (BLAS): 60-80+ GFLOPS (~60% of peak)
+
+## Key Learnings
+
+1. **Cache blocking** provides 2-3× improvement by keeping working set in L1
+2. **Loop ordering** matters — keeping A tile in cache while scanning B columns
+3. **SIMD** provides ~4× throughput improvement (4 floats per instruction)
+4. **FMA instructions** are key — single instruction for multiply-add
+5. **Profiling** confirms compute-bound behavior (74% in FMA)
+
+## Future Optimizations
+
+To reach 30-50 GFLOPS:
+- Register tiling (multiple C accumulators)
+- Loop unrolling (reduce 12% loop overhead)
+- Prefetching (hide memory latency)
+
+These concepts transfer directly to GPU programming (shared memory tiling, warp-level parallelism).
+
+## Build
+
+```bash
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make
+./gemm_benchmark
+```
+
+## Regenerate Graphs
+
+```bash
+python3 plot_results.py
+```
