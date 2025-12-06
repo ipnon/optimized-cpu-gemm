@@ -17,9 +17,12 @@ int main() {
         benchmark_gemm(gemm_naive, A.data(), B.data(), C.data(), N, N, N);
     double gflops_blocked =
         benchmark_gemm(gemm_blocked, A.data(), B.data(), C.data(), N, N, N);
+    double gflops_simd =
+        benchmark_gemm(gemm_simd, A.data(), B.data(), C.data(), N, N, N);
 
     std::cout << N << "x" << N << " naive: " << gflops_naive << " GFLOPS\n";
     std::cout << N << "x" << N << " blocked: " << gflops_blocked << " GFLOPS\n";
+    std::cout << N << "x" << N << " simd: " << gflops_simd << " GFLOPS\n";
   }
 
   return 0;  // Matrices automatically freed
